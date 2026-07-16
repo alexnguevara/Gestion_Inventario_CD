@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Consulta de Inventario</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f2f4f7;
+      margin: 0;
+      padding: 16px;
+      color: #1f2d3d;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    h1 { font-size: 20px; color: #1F4E78; margin: 0 0 12px 0; }
+    label { font-size: 13px; color: #555; display:block; margin-bottom:4px; }
+    input[type=text], input[type=number] {
+      width: 100%;
+      padding: 12px;
+      font-size: 18px;
+      border: 2px solid #1F4E78;
+      border-radius: 8px;
+      background: #fff8e1;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    .btn-primary { background: #1F4E78; color: #fff; }
+    .btn-secondary { background: #e2e8f0; color: #1F4E78; }
+    .btn-save { background: #2e7d32; color: #fff; }
+    .btn-toggle { background: #e2e8f0; color: #1F4E78; margin-top:0; flex:1; }
+    .btn-toggle.activo { background: #1F4E78; color: #fff; }
+    #reader { width: 100%; margin-top: 10px; border-radius: 8px; overflow: hidden; }
+    .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+    .row span:first-child { color: #667; }
+    .row span:last-child { font-weight: bold; text-align: right; max-width: 60%; }
+    .estado-OK { color: #2e7d32; }
+    .estado-BAJO { color: #c62828; }
+    .msg { text-align: center; padding: 20px; color: #888; }
+    #estadoCarga { font-size: 13px; color: #888; text-align:center; margin-top:6px; }
+    table { width:100%; border-collapse: collapse; font-size:13px; margin-top:10px; }
+    th, td { border:1px solid #ccc; padding:6px; text-align:left; }
+    th { background:#1F4E78; color:#fff; }
+    @media print {
+      body * { visibility: hidden; }
+      #impresionCard, #impresionCard * { visibility: visible; }
+      #impresionCard { position:absolute; left:0; top:0; width:100%; }
+      .no-print { display:none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>📦 Consulta de Inventario</h1>
+    <label>Escribe el código o escanéalo con un lector de código de barras físico (funciona como teclado):</label>
+    <input type="text" id="codigoInput" placeholder="Ej: SKU-0001" autofocus>
+    <button class="btn-primary" onclick="buscar()">Buscar</button>
+    <button class="btn-secondary" id="btnCamara" onclick="toggleCamara()">📷 Escanear código de barras</button>
+    <div id="reader"></div>
+    <div id="estadoCarga"></div>
+  </div>
+
+  <div class="card">
+    <button class="btn-secondary" onclick="imprimirInventario()">🖨️ Imprimir Inventario</button>
+  </div>
+
+  <div class="card" id="resultado" style="display:none;">
+    <div class="row"><span>Nombre</span><span id="r_nombre"></span></div>
+    <div class="row"><span>Categoría</span><span id="r_categoria"></span></div>
+    <div class="row"><span>Descripción</span><span id="r_descripcion"></span></div>
+    <div class="row"><span>Cantidad disponible</span><span id="r_cantidad"></span></div>
+    <div class="row"><span>Estado</span><span id="r_estado"></span></div>
+    <div class="row"><span>Precio</span><span id="r_precio"></span></div>
+    <div class="row"><span>Ubicación</span><span id="r_ubicacion"></span></div>
+    <div class="row"><span>Proveedor</span><span id="r_proveedor"></span></div>
+    <div class="row"><span>Última actualización</span><span id="r_fecha"></span></div>
+
+    <label style="margin-top:14px;">Registrar movimiento</label>
+    <div style="display:flex; gap:8px; margin-top:6px;">
+      <button type="button" id="btnTipoEntrada" class="btn-toggle" onclick="seleccionarTipo('Entradas')">⬇️ Entrada</button>
+      <button type="button" id="btnTipoSalida" class="btn-toggle" onclick="seleccionarTipo('Salidas')">⬆️ Salida</button>
+    </div>
+    <input type="number" id="cantidadMovimiento" min="1" placeholder="Cantidad" style="margin-top:8px;">
+    <button class="btn-save" onclick="guardarMovimiento()">💾 Guardar movimiento</button>
+  </div>
+
+  <div class="card msg" id="noEncontrado" style="display:none;">
+    ⚠ Código no encontrado en el inventario.
+  </div>
+
+  <div class="card" id="impresionCard" style="display:none;">
+    <h1>📋 Inventario Disponible</h1>
+    <div id="fechaImpresion" style="font-size:13px;color:#667;margin-bottom:10px;"></div>
+    <table>
+      <thead>
+        <tr><th>Código</th><th>Nombre</th><th>Categoría</th><th>Descripción</th><th>Cantidad</th><th>Ubicación</th></tr>
+      </thead>
+      <tbody id="cuerpoTablaImpresion"></tbody>
+    </table>
+    <button class="btn-save no-print" onclick="window.print()">🖨️ Guardar como PDF / Imprimir</button>
+  </div>
+
+<script>
+  // ======================================================================
+  // >>> REEMPLAZA ESTA LÍNEA con la URL de tu Apps Script (la que termina
+  //     en /exec). La obtienes en Implementar > Gestionar implementaciones.
+  // ======================================================================
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbym-NanXIaayR_GqaSubPEdLhklbWsNRL0H5i8z5yjGuU8gWhlnd1zjphW4VCUVjHY0/exec";
+
+  var codigoActual = null;
+  var tipoMovimiento = null;
+  var html5QrCode = null;
+  var camaraActiva = false;
+  var jsonpCounter = 0;
+
+  /** Llama a la API de Apps Script usando JSONP (evita problemas de CORS). */
+  function llamarAPI(params, onSuccess, onError) {
+    var cbName = 'jsonpCb' + (jsonpCounter++);
+    window[cbName] = function(data) {
+      delete window[cbName];
+      document.body.removeChild(script);
+      onSuccess(data);
+    };
+    var query = 'callback=' + cbName;
+    for (var k in params) {
+      query += '&' + k + '=' + encodeURIComponent(params[k]);
+    }
+    var script = document.createElement('script');
+    script.src = APPS_SCRIPT_URL + '?' + query;
+    script.onerror = function() {
+      delete window[cbName];
+      if (onError) onError({ message: 'No se pudo conectar con Apps Script' });
+    };
+    document.body.appendChild(script);
+  }
+
+  var input = document.getElementById('codigoInput');
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); buscar(); }
+  });
+
+  function buscar() {
+    var codigo = input.value.trim();
+    if (!codigo) return;
+    document.getElementById('estadoCarga').innerText = 'Buscando...';
+    llamarAPI({ action: 'lookup', codigo: codigo }, mostrarResultado, mostrarError);
+  }
+
+  function mostrarResultado(data) {
+    document.getElementById('estadoCarga').innerText = '';
+    if (!data.encontrado) {
+      document.getElementById('resultado').style.display = 'none';
+      document.getElementById('noEncontrado').style.display = 'block';
+      codigoActual = null;
+      return;
+    }
+    codigoActual = data.codigo;
+    tipoMovimiento = null;
+    document.getElementById('btnTipoEntrada').classList.remove('activo');
+    document.getElementById('btnTipoSalida').classList.remove('activo');
+    document.getElementById('cantidadMovimiento').value = '';
+
+    document.getElementById('noEncontrado').style.display = 'none';
+    document.getElementById('resultado').style.display = 'block';
+    document.getElementById('r_nombre').innerText = data.nombre || '';
+    document.getElementById('r_categoria').innerText = data.categoria || '';
+    document.getElementById('r_descripcion').innerText = data.descripcion || '';
+    document.getElementById('r_cantidad').innerText = data.cantidad;
+    var estadoEl = document.getElementById('r_estado');
+    estadoEl.innerText = data.estado;
+    estadoEl.className = data.estado === 'OK' ? 'estado-OK' : 'estado-BAJO';
+    document.getElementById('r_precio').innerText = data.precio;
+    document.getElementById('r_ubicacion').innerText = data.ubicacion || '';
+    document.getElementById('r_proveedor').innerText = data.proveedor || '';
+    document.getElementById('r_fecha').innerText = data.fecha || '';
+  }
+
+  function mostrarError(err) {
+    document.getElementById('estadoCarga').innerText = 'Error: ' + err.message;
+  }
+
+  function seleccionarTipo(tipo) {
+    tipoMovimiento = tipo;
+    document.getElementById('btnTipoEntrada').classList.toggle('activo', tipo === 'Entradas');
+    document.getElementById('btnTipoSalida').classList.toggle('activo', tipo === 'Salidas');
+  }
+
+  function guardarMovimiento() {
+    if (!codigoActual) return;
+    if (!tipoMovimiento) {
+      document.getElementById('estadoCarga').innerText = 'Selecciona Entrada o Salida';
+      return;
+    }
+    var cantidad = document.getElementById('cantidadMovimiento').value;
+    if (!cantidad || Number(cantidad) <= 0) {
+      document.getElementById('estadoCarga').innerText = 'Ingresa una cantidad válida';
+      return;
+    }
+    document.getElementById('estadoCarga').innerText = 'Guardando...';
+    llamarAPI(
+      { action: 'movimiento', codigo: codigoActual, tipo: tipoMovimiento, cantidad: cantidad },
+      function(res) {
+        if (res.ok) {
+          document.getElementById('estadoCarga').innerText = 'Movimiento guardado ✔';
+          buscar();
+        } else {
+          document.getElementById('estadoCarga').innerText = 'Error: ' + res.error;
+        }
+      },
+      mostrarError
+    );
+  }
+
+  function imprimirInventario() {
+    document.getElementById('estadoCarga').innerText = 'Generando inventario...';
+    llamarAPI({ action: 'imprimir' }, mostrarInventarioImprimir, mostrarError);
+  }
+
+  function mostrarInventarioImprimir(items) {
+    document.getElementById('estadoCarga').innerText = '';
+    var tbody = document.getElementById('cuerpoTablaImpresion');
+    tbody.innerHTML = '';
+    items.forEach(function(it) {
+      var tr = document.createElement('tr');
+      ['codigo','nombre','categoria','descripcion','cantidad','ubicacion'].forEach(function(campo) {
+        var td = document.createElement('td');
+        td.textContent = it[campo];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    document.getElementById('fechaImpresion').innerText = 'Fecha del reporte: ' + new Date().toLocaleString();
+    document.getElementById('impresionCard').style.display = 'block';
+    document.getElementById('impresionCard').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function toggleCamara() {
+    if (!camaraActiva) {
+      html5QrCode = new Html5Qrcode("reader");
+      var formatosBarras = [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODABAR
+      ];
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: formatosBarras },
+        function(decodedText) {
+          input.value = decodedText;
+          buscar();
+          detenerCamara();
+        }
+      ).then(function() {
+        camaraActiva = true;
+        document.getElementById('btnCamara').innerText = '✖ Cerrar cámara';
+      }).catch(function(err) {
+        document.getElementById('estadoCarga').innerText = 'No se pudo abrir la cámara: ' + err;
+      });
+    } else {
+      detenerCamara();
+    }
+  }
+
+  function detenerCamara() {
+    if (html5QrCode) {
+      html5QrCode.stop().then(function() {
+        html5QrCode.clear();
+        camaraActiva = false;
+        document.getElementById('btnCamara').innerText = '📷 Escanear código de barras';
+      });
+    }
+  }
+</script>
+</body>
+</html>
