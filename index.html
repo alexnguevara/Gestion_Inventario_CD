@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Consulta de Inventario</title>
+  <!-- Ícono de la pestaña. Si subiste icon.png a este mismo repositorio de GitHub, déjalo así.
+       Si usas Google Drive, reemplaza por: https://drive.google.com/uc?export=view&id=TU_ID_AQUI -->
+  <link rel="icon" type="image/png" href="icon.png">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; }
@@ -79,6 +82,30 @@
 
   <div class="card">
     <button class="btn-secondary" onclick="imprimirInventario()">🖨️ Imprimir Inventario</button>
+    <button class="btn-secondary" onclick="toggleFormularioNuevo()">➕ Crear Nuevo Item de Inventario</button>
+  </div>
+
+  <div class="card" id="formularioNuevo" style="display:none;">
+    <h1>➕ Nuevo Producto</h1>
+    <label>Código (SKU) *</label>
+    <input type="text" id="n_codigo" placeholder="Ej: SKU-0004">
+    <label style="margin-top:10px;">Nombre del Producto</label>
+    <input type="text" id="n_nombre" placeholder="Ej: Camisa Polo Verde M">
+    <label style="margin-top:10px;">Categoría</label>
+    <input type="text" id="n_categoria" placeholder="Ej: Camisas">
+    <label style="margin-top:10px;">Descripción</label>
+    <input type="text" id="n_descripcion" placeholder="Ej: Polo 100% algodón">
+    <label style="margin-top:10px;">Cantidad Disponible</label>
+    <input type="number" id="n_cantidad" placeholder="0">
+    <label style="margin-top:10px;">Punto de Reorden</label>
+    <input type="number" id="n_puntoReorden" placeholder="0">
+    <label style="margin-top:10px;">Precio Unitario</label>
+    <input type="number" id="n_precio" placeholder="0.00" step="0.01">
+    <label style="margin-top:10px;">Ubicación</label>
+    <input type="text" id="n_ubicacion" placeholder="Ej: Bodega A - Estante 3">
+    <label style="margin-top:10px;">Proveedor</label>
+    <input type="text" id="n_proveedor" placeholder="Ej: Textiles del Norte">
+    <button class="btn-save" onclick="guardarNuevoItem()">💾 Guardar item nuevo</button>
   </div>
 
   <div class="card" id="resultado" style="display:none;">
@@ -122,7 +149,7 @@
   // >>> REEMPLAZA ESTA LÍNEA con la URL de tu Apps Script (la que termina
   //     en /exec). La obtienes en Implementar > Gestionar implementaciones.
   // ======================================================================
-  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbym-NanXIaayR_GqaSubPEdLhklbWsNRL0H5i8z5yjGuU8gWhlnd1zjphW4VCUVjHY0/exec";
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpF4-yTXESQQaZnrhu03R6hSgcdjFyUhbKabaPYCra4ffC3h9EQqeW_XxGgCC_Mkrb/exec";
 
   var codigoActual = null;
   var tipoMovimiento = null;
@@ -226,6 +253,43 @@
       },
       mostrarError
     );
+  }
+
+  function toggleFormularioNuevo() {
+    var card = document.getElementById('formularioNuevo');
+    card.style.display = (card.style.display === 'none') ? 'block' : 'none';
+    if (card.style.display === 'block') card.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function guardarNuevoItem() {
+    var codigo = document.getElementById('n_codigo').value.trim();
+    if (!codigo) {
+      document.getElementById('estadoCarga').innerText = 'El código es obligatorio';
+      return;
+    }
+    var datos = {
+      action: 'crear',
+      codigo: codigo,
+      nombre: document.getElementById('n_nombre').value.trim(),
+      categoria: document.getElementById('n_categoria').value.trim(),
+      descripcion: document.getElementById('n_descripcion').value.trim(),
+      cantidad: document.getElementById('n_cantidad').value || 0,
+      puntoReorden: document.getElementById('n_puntoReorden').value || 0,
+      precio: document.getElementById('n_precio').value || 0,
+      ubicacion: document.getElementById('n_ubicacion').value.trim(),
+      proveedor: document.getElementById('n_proveedor').value.trim()
+    };
+    document.getElementById('estadoCarga').innerText = 'Guardando producto...';
+    llamarAPI(datos, function(res) {
+      if (res.ok) {
+        document.getElementById('estadoCarga').innerText = 'Producto creado ✔';
+        ['n_codigo','n_nombre','n_categoria','n_descripcion','n_cantidad','n_puntoReorden','n_precio','n_ubicacion','n_proveedor']
+          .forEach(function(id) { document.getElementById(id).value = ''; });
+        document.getElementById('formularioNuevo').style.display = 'none';
+      } else {
+        document.getElementById('estadoCarga').innerText = 'Error: ' + res.error;
+      }
+    }, mostrarError);
   }
 
   function imprimirInventario() {
