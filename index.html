@@ -6,7 +6,6 @@
   <title>Consulta de Inventario</title>
   <!-- Ícono de la pestaña. Si subiste icon.png a este mismo repositorio de GitHub, déjalo así.
        Si usas Google Drive, reemplaza por: https://drive.google.com/uc?export=view&id=TU_ID_AQUI -->
-  <link rel="apple-touch-icon" type="image/png" href="icon.png">
   <link rel="icon" type="image/png" href="icon.png">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -26,6 +25,7 @@
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     }
     h1 { font-size: 20px; color: #1F4E78; margin: 0 0 12px 0; }
+    h2 { font-size: 16px; color: #1F4E78; margin: 0 0 10px 0; }
     label { font-size: 13px; color: #555; display:block; margin-bottom:4px; }
     input[type=text], input[type=number] {
       width: 100%;
@@ -48,6 +48,7 @@
     .btn-primary { background: #1F4E78; color: #fff; }
     .btn-secondary { background: #e2e8f0; color: #1F4E78; }
     .btn-save { background: #2e7d32; color: #fff; }
+    .btn-cancel { background: #eee; color: #c62828; }
     .btn-toggle { background: #e2e8f0; color: #1F4E78; margin-top:0; flex:1; }
     .btn-toggle.activo { background: #1F4E78; color: #fff; }
     #reader { width: 100%; margin-top: 10px; border-radius: 8px; overflow: hidden; }
@@ -61,6 +62,8 @@
     table { width:100%; border-collapse: collapse; font-size:13px; margin-top:10px; }
     th, td { border:1px solid #ccc; padding:6px; text-align:left; }
     th { background:#1F4E78; color:#fff; }
+    .item-card { border: 1px solid #dde3ea; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+    .item-card .badge { display:inline-block; background:#1F4E78; color:#fff; font-size:12px; padding:3px 10px; border-radius:12px; margin-bottom:8px; }
     @media print {
       body * { visibility: hidden; }
       #impresionCard, #impresionCard * { visibility: visible; }
@@ -106,28 +109,13 @@
     <input type="text" id="n_ubicacion" placeholder="Ej: Bodega A - Estante 3">
     <label style="margin-top:10px;">Proveedor</label>
     <input type="text" id="n_proveedor" placeholder="Ej: Textiles del Norte">
-    <button class="btn-save" onclick="guardarNuevoItem()">💾 Guardar item nuevo</button>
-  </div>
-
-  <div class="card" id="resultado" style="display:none;">
-    <div class="row"><span>Nombre</span><span id="r_nombre"></span></div>
-    <div class="row"><span>Categoría</span><span id="r_categoria"></span></div>
-    <div class="row"><span>Descripción</span><span id="r_descripcion"></span></div>
-    <div class="row"><span>Cantidad disponible</span><span id="r_cantidad"></span></div>
-    <div class="row"><span>Estado</span><span id="r_estado"></span></div>
-    <div class="row"><span>Precio</span><span id="r_precio"></span></div>
-    <div class="row"><span>Ubicación</span><span id="r_ubicacion"></span></div>
-    <div class="row"><span>Proveedor</span><span id="r_proveedor"></span></div>
-    <div class="row"><span>Última actualización</span><span id="r_fecha"></span></div>
-
-    <label style="margin-top:14px;">Registrar movimiento</label>
-    <div style="display:flex; gap:8px; margin-top:6px;">
-      <button type="button" id="btnTipoEntrada" class="btn-toggle" onclick="seleccionarTipo('Entradas')">⬇️ Entrada</button>
-      <button type="button" id="btnTipoSalida" class="btn-toggle" onclick="seleccionarTipo('Salidas')">⬆️ Salida</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-save" style="flex:2;" onclick="guardarNuevoItem()">💾 Guardar item nuevo</button>
+      <button class="btn-cancel" style="flex:1;" onclick="limpiarPantalla()">✖ Cancelar</button>
     </div>
-    <input type="number" id="cantidadMovimiento" min="1" placeholder="Cantidad" style="margin-top:8px;">
-    <button class="btn-save" onclick="guardarMovimiento()">💾 Guardar movimiento</button>
   </div>
+
+  <div id="resultadosContainer"></div>
 
   <div class="card msg" id="noEncontrado" style="display:none;">
     ⚠ Código no encontrado en el inventario.
@@ -142,7 +130,10 @@
       </thead>
       <tbody id="cuerpoTablaImpresion"></tbody>
     </table>
-    <button class="btn-save no-print" onclick="window.print()">🖨️ Guardar como PDF / Imprimir</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-save no-print" style="flex:2;" onclick="window.print()">🖨️ Guardar como PDF / Imprimir</button>
+      <button class="btn-cancel no-print" style="flex:1;" onclick="limpiarPantalla()">✖ Ocultar</button>
+    </div>
   </div>
 
 <script>
@@ -152,11 +143,10 @@
   // ======================================================================
   var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzUNWFwoqqZChZ8wIhatwwQSDGOw93WbShd22GXAfh4gcvd7XNTFUZEsjB30UIO-AF5/exec";
 
-  var codigoActual = null;
-  var tipoMovimiento = null;
   var html5QrCode = null;
   var camaraActiva = false;
   var jsonpCounter = 0;
+  var tipoPorFila = {};
 
   /** Llama a la API de Apps Script usando JSONP (evita problemas de CORS). */
   function llamarAPI(params, onSuccess, onError) {
@@ -184,69 +174,114 @@
     if (e.key === 'Enter') { e.preventDefault(); buscar(); }
   });
 
+  /** Oculta y limpia todas las secciones (búsqueda, creación, impresión). */
+  function limpiarPantalla() {
+    document.getElementById('resultadosContainer').innerHTML = '';
+    document.getElementById('noEncontrado').style.display = 'none';
+    document.getElementById('formularioNuevo').style.display = 'none';
+    document.getElementById('impresionCard').style.display = 'none';
+    document.getElementById('estadoCarga').innerText = '';
+    ['n_codigo','n_nombre','n_categoria','n_descripcion','n_cantidad','n_puntoReorden','n_precio','n_ubicacion','n_proveedor']
+      .forEach(function(id) { document.getElementById(id).value = ''; });
+    tipoPorFila = {};
+  }
+
   function buscar() {
     var codigo = input.value.trim();
     if (!codigo) return;
+    document.getElementById('formularioNuevo').style.display = 'none';
+    document.getElementById('impresionCard').style.display = 'none';
+    document.getElementById('resultadosContainer').innerHTML = '';
+    document.getElementById('noEncontrado').style.display = 'none';
     document.getElementById('estadoCarga').innerText = 'Buscando...';
     llamarAPI({ action: 'lookup', codigo: codigo }, mostrarResultado, mostrarError);
   }
 
   function mostrarResultado(data) {
     document.getElementById('estadoCarga').innerText = '';
+    var contenedor = document.getElementById('resultadosContainer');
+    contenedor.innerHTML = '';
+
     if (!data.encontrado) {
-      document.getElementById('resultado').style.display = 'none';
       document.getElementById('noEncontrado').style.display = 'block';
-      codigoActual = null;
       return;
     }
-    codigoActual = data.codigo;
-    tipoMovimiento = null;
-    document.getElementById('btnTipoEntrada').classList.remove('activo');
-    document.getElementById('btnTipoSalida').classList.remove('activo');
-    document.getElementById('cantidadMovimiento').value = '';
-
     document.getElementById('noEncontrado').style.display = 'none';
-    document.getElementById('resultado').style.display = 'block';
-    document.getElementById('r_nombre').innerText = data.nombre || '';
-    document.getElementById('r_categoria').innerText = data.categoria || '';
-    document.getElementById('r_descripcion').innerText = data.descripcion || '';
-    document.getElementById('r_cantidad').innerText = data.cantidad;
-    var estadoEl = document.getElementById('r_estado');
-    estadoEl.innerText = data.estado;
-    estadoEl.className = data.estado === 'OK' ? 'estado-OK' : 'estado-BAJO';
-    document.getElementById('r_precio').innerText = data.precio;
-    document.getElementById('r_ubicacion').innerText = data.ubicacion || '';
-    document.getElementById('r_proveedor').innerText = data.proveedor || '';
-    document.getElementById('r_fecha').innerText = data.fecha || '';
+
+    var card = document.createElement('div');
+    card.className = 'card';
+
+    var titulo = document.createElement('h1');
+    titulo.textContent = data.items.length > 1
+      ? '📦 ' + data.items.length + ' coincidencias encontradas'
+      : '📦 Producto encontrado';
+    card.appendChild(titulo);
+
+    data.items.forEach(function(item) {
+      card.appendChild(construirItemCard(item));
+    });
+
+    contenedor.appendChild(card);
+  }
+
+  function construirItemCard(item) {
+    var div = document.createElement('div');
+    div.className = 'item-card';
+    tipoPorFila[item.fila] = null;
+
+    div.innerHTML =
+      '<div class="badge">📍 ' + (item.ubicacion || 'Sin ubicación') + '</div>' +
+      fila('Nombre', item.nombre) +
+      fila('Categoría', item.categoria) +
+      fila('Descripción', item.descripcion) +
+      fila('Cantidad disponible', item.cantidad) +
+      '<div class="row"><span>Estado</span><span class="' + (item.estado === 'OK' ? 'estado-OK' : 'estado-BAJO') + '">' + item.estado + '</span></div>' +
+      fila('Precio', item.precio) +
+      fila('Proveedor', item.proveedor) +
+      fila('Última actualización', item.fecha) +
+      '<label style="margin-top:14px;">Registrar movimiento</label>' +
+      '<div style="display:flex; gap:8px; margin-top:6px;">' +
+        '<button type="button" id="btnEntrada_' + item.fila + '" class="btn-toggle" onclick="seleccionarTipo(' + item.fila + ',\'Entradas\')">⬇️ Entrada</button>' +
+        '<button type="button" id="btnSalida_' + item.fila + '" class="btn-toggle" onclick="seleccionarTipo(' + item.fila + ',\'Salidas\')">⬆️ Salida</button>' +
+      '</div>' +
+      '<input type="number" id="cantidadMov_' + item.fila + '" min="1" placeholder="Cantidad" style="margin-top:8px;">' +
+      '<button class="btn-save" onclick="guardarMovimiento(' + item.fila + ', \'' + item.codigo + '\')">💾 Guardar movimiento</button>';
+
+    return div;
+  }
+
+  function fila(etiqueta, valor) {
+    return '<div class="row"><span>' + etiqueta + '</span><span>' + (valor === undefined || valor === null ? '' : valor) + '</span></div>';
   }
 
   function mostrarError(err) {
     document.getElementById('estadoCarga').innerText = 'Error: ' + err.message;
   }
 
-  function seleccionarTipo(tipo) {
-    tipoMovimiento = tipo;
-    document.getElementById('btnTipoEntrada').classList.toggle('activo', tipo === 'Entradas');
-    document.getElementById('btnTipoSalida').classList.toggle('activo', tipo === 'Salidas');
+  function seleccionarTipo(fila, tipo) {
+    tipoPorFila[fila] = tipo;
+    document.getElementById('btnEntrada_' + fila).classList.toggle('activo', tipo === 'Entradas');
+    document.getElementById('btnSalida_' + fila).classList.toggle('activo', tipo === 'Salidas');
   }
 
-  function guardarMovimiento() {
-    if (!codigoActual) return;
-    if (!tipoMovimiento) {
+  function guardarMovimiento(fila, codigo) {
+    var tipo = tipoPorFila[fila];
+    if (!tipo) {
       document.getElementById('estadoCarga').innerText = 'Selecciona Entrada o Salida';
       return;
     }
-    var cantidad = document.getElementById('cantidadMovimiento').value;
+    var cantidad = document.getElementById('cantidadMov_' + fila).value;
     if (!cantidad || Number(cantidad) <= 0) {
       document.getElementById('estadoCarga').innerText = 'Ingresa una cantidad válida';
       return;
     }
     document.getElementById('estadoCarga').innerText = 'Guardando...';
     llamarAPI(
-      { action: 'movimiento', codigo: codigoActual, tipo: tipoMovimiento, cantidad: cantidad },
+      { action: 'movimiento', fila: fila, tipo: tipo, cantidad: cantidad },
       function(res) {
         if (res.ok) {
           document.getElementById('estadoCarga').innerText = 'Movimiento guardado ✔';
+          input.value = codigo;
           buscar();
         } else {
           document.getElementById('estadoCarga').innerText = 'Error: ' + res.error;
@@ -258,8 +293,12 @@
 
   function toggleFormularioNuevo() {
     var card = document.getElementById('formularioNuevo');
-    card.style.display = (card.style.display === 'none') ? 'block' : 'none';
-    if (card.style.display === 'block') card.scrollIntoView({ behavior: 'smooth' });
+    var mostrar = card.style.display === 'none';
+    document.getElementById('resultadosContainer').innerHTML = '';
+    document.getElementById('noEncontrado').style.display = 'none';
+    document.getElementById('impresionCard').style.display = 'none';
+    card.style.display = mostrar ? 'block' : 'none';
+    if (mostrar) card.scrollIntoView({ behavior: 'smooth' });
   }
 
   function guardarNuevoItem() {
@@ -284,9 +323,7 @@
     llamarAPI(datos, function(res) {
       if (res.ok) {
         document.getElementById('estadoCarga').innerText = 'Producto creado ✔';
-        ['n_codigo','n_nombre','n_categoria','n_descripcion','n_cantidad','n_puntoReorden','n_precio','n_ubicacion','n_proveedor']
-          .forEach(function(id) { document.getElementById(id).value = ''; });
-        document.getElementById('formularioNuevo').style.display = 'none';
+        limpiarPantalla();
       } else {
         document.getElementById('estadoCarga').innerText = 'Error: ' + res.error;
       }
@@ -294,6 +331,9 @@
   }
 
   function imprimirInventario() {
+    document.getElementById('resultadosContainer').innerHTML = '';
+    document.getElementById('noEncontrado').style.display = 'none';
+    document.getElementById('formularioNuevo').style.display = 'none';
     document.getElementById('estadoCarga').innerText = 'Generando inventario...';
     llamarAPI({ action: 'imprimir' }, mostrarInventarioImprimir, mostrarError);
   }
